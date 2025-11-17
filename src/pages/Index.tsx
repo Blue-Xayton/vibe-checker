@@ -160,25 +160,40 @@ const Index = () => {
             <VisualizationPanel results={results} />
 
             {results.length > 0 && (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-2xl font-bold">Results ({results.length})</h2>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => exportResults("csv")}>
-                      <Download className="w-4 h-4 mr-2" />
-                      CSV
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => exportResults("json")}>
-                      <Download className="w-4 h-4 mr-2" />
-                      JSON
-                    </Button>
+              <div className="space-y-8">
+                {/* Current/Latest Result */}
+                <div>
+                  <h2 className="text-3xl font-bold mb-4 flex items-center gap-2">
+                    <span className="text-primary">Current Analysis</span>
+                  </h2>
+                  <ResultCard result={results[0]} isCurrent={true} />
+                </div>
+
+                {/* History Section */}
+                {results.length > 1 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-xl font-semibold text-muted-foreground">
+                        History ({results.length - 1})
+                      </h3>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => exportResults("csv")}>
+                          <Download className="w-4 h-4 mr-2" />
+                          CSV
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => exportResults("json")}>
+                          <Download className="w-4 h-4 mr-2" />
+                          JSON
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      {results.slice(1).map((result) => (
+                        <ResultCard key={result.id} result={result} isCurrent={false} />
+                      ))}
+                    </div>
                   </div>
-                </div>
-                <div className="space-y-4">
-                  {results.map((result) => (
-                    <ResultCard key={result.id} result={result} />
-                  ))}
-                </div>
+                )}
               </div>
             )}
           </div>
