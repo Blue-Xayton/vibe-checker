@@ -9,19 +9,31 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 
 interface ResultCardProps {
   result: SentimentResult;
+  isCurrent?: boolean;
 }
 
-export const ResultCard = ({ result }: ResultCardProps) => {
+export const ResultCard = ({ result, isCurrent = false }: ResultCardProps) => {
   const [showExplanation, setShowExplanation] = useState(false);
 
   const getSentimentIcon = () => {
     switch (result.label) {
       case "positive":
-        return <ThumbsUp className="w-5 h-5 text-sentiment-positive" />;
+        return <ThumbsUp className={isCurrent ? "w-8 h-8 text-sentiment-positive" : "w-5 h-5 text-sentiment-positive"} />;
       case "negative":
-        return <ThumbsDown className="w-5 h-5 text-sentiment-negative" />;
+        return <ThumbsDown className={isCurrent ? "w-8 h-8 text-sentiment-negative" : "w-5 h-5 text-sentiment-negative"} />;
       default:
-        return <Minus className="w-5 h-5 text-sentiment-neutral" />;
+        return <Minus className={isCurrent ? "w-8 h-8 text-sentiment-neutral" : "w-5 h-5 text-sentiment-neutral"} />;
+    }
+  };
+
+  const getSentimentEmoji = () => {
+    switch (result.label) {
+      case "positive":
+        return "😊";
+      case "negative":
+        return "😠";
+      default:
+        return "😐";
     }
   };
 
@@ -33,6 +45,17 @@ export const ResultCard = ({ result }: ResultCardProps) => {
         return "bg-sentiment-negative/10 text-sentiment-negative border-sentiment-negative";
       default:
         return "bg-sentiment-neutral/10 text-sentiment-neutral border-sentiment-neutral";
+    }
+  };
+
+  const getCurrentGlow = () => {
+    switch (result.label) {
+      case "positive":
+        return "shadow-[0_0_40px_rgba(16,185,129,0.4)] border-sentiment-positive/50";
+      case "negative":
+        return "shadow-[0_0_40px_rgba(239,68,68,0.4)] border-sentiment-negative/50";
+      default:
+        return "shadow-[0_0_40px_rgba(251,191,36,0.4)] border-sentiment-neutral/50";
     }
   };
 
@@ -52,15 +75,28 @@ export const ResultCard = ({ result }: ResultCardProps) => {
   };
 
   return (
-    <Card className="p-4 shadow-card hover:shadow-glow transition-all duration-300 animate-fade-in">
-      <div className="space-y-3">
+    <Card className={`${
+      isCurrent 
+        ? `p-6 border-4 ${getCurrentGlow()} animate-scale-in relative overflow-hidden` 
+        : "p-4 shadow-card hover:shadow-glow opacity-70 hover:opacity-100"
+    } transition-all duration-300 animate-fade-in`}>
+      {isCurrent && (
+        <>
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-accent"></div>
+          <Badge className="absolute top-4 right-4 bg-primary text-primary-foreground animate-pulse">
+            Latest Sentiment
+          </Badge>
+        </>
+      )}
+      <div className={isCurrent ? "space-y-4" : "space-y-3"}>
         <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <span className={isCurrent ? "text-4xl" : "hidden"}>{getSentimentEmoji()}</span>
             {getSentimentIcon()}
-            <Badge className={getSentimentColor()}>
+            <Badge className={`${getSentimentColor()} ${isCurrent ? "text-lg px-3 py-1" : ""}`}>
               {result.label.toUpperCase()}
             </Badge>
-            <span className="text-sm font-semibold text-muted-foreground">
+            <span className={`font-bold text-muted-foreground ${isCurrent ? "text-lg" : "text-sm"}`}>
               {(result.confidence * 100).toFixed(1)}% confidence
             </span>
           </div>
@@ -135,7 +171,7 @@ export const ResultCard = ({ result }: ResultCardProps) => {
         </div>
 
         <div 
-          className="text-sm text-foreground leading-relaxed"
+          className={`text-foreground leading-relaxed ${isCurrent ? "text-base font-medium" : "text-sm"}`}
           dangerouslySetInnerHTML={{ __html: highlightKeywords(result.text) }}
         />
       </div>
