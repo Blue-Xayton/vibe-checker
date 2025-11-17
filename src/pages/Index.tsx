@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { InputSection } from "@/components/InputSection";
 import { ResultCard } from "@/components/ResultCard";
 import { VisualizationPanel } from "@/components/VisualizationPanel";
@@ -6,11 +7,14 @@ import { GamificationPanel } from "@/components/GamificationPanel";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { SentimentResult, UserStats } from "@/types/sentiment";
-import { Download, Sparkles } from "lucide-react";
+import { Download, Sparkles, LogOut } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import type { User } from "@supabase/supabase-js";
 
 const Index = () => {
+  const navigate = useNavigate();
+  const [user, setUser] = useState<User | null>(null);
   const [results, setResults] = useState<SentimentResult[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [batchProgress, setBatchProgress] = useState<number>(0);
@@ -22,7 +26,74 @@ const Index = () => {
   });
   const { toast } = useToast();
 
+  useEffect(() => {
+    // Check auth state
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        navigate("/auth");
+      } else {
+        setUser(session.user);
+        loadUserData(session.user.id);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!session) {
+        navigate("/auth");
+      } else {
+        setUser(session.user);
+        loadUserData(session.user.id);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
+  const loadUserData = async (userId: string) => {
+    try {
+      // Load user profile
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .single();
+
+      if (profile) {
+        setStats({
+          textsProcessed: profile.texts_processed,
+          batchesCompleted: profile.batches_completed,
+          averageConfidence: Number(profile.average_confidence),
+          badges: [],
+        });
+      }
+
+      // Load sentiment results
+      const { data: sentimentResults } = await supabase
+        .from("sentiment_results")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
+
+      if (sentimentResults) {
+        setResults(sentimentResults.map(r => ({
+          id: r.id,
+          text: r.text,
+          label: r.label as any,
+          scores: r.scores as any,
+          confidence: Number(r.confidence),
+          explanation: r.explanation,
+          keywords: r.keywords as any,
+          timestamp: r.created_at,
+        })));
+      }
+    } catch (error: any) {
+      console.error("Error loading user data:", error);
+    }
+  };
+
   const analyzeSentiment = async (texts: string[]) => {
+    if (!user) return;
+
     setIsAnalyzing(true);
     setBatchProgress(0);
     const newResults: SentimentResult[] = [];
@@ -47,17 +118,48 @@ const Index = () => {
         setBatchProgress(((i + batch.length) / texts.length) * 100);
       }
 
+      // Save results to database
+      const { error: insertError } = await supabase
+        .from("sentiment_results")
+        .insert(
+          newResults.map(r => ({
+            user_id: user.id,
+            text: r.text,
+            label: r.label,
+            confidence: r.confidence,
+            explanation: r.explanation,
+            keywords: r.keywords as any,
+            scores: r.scores as any,
+          }))
+        );
+
+      if (insertError) throw insertError;
+
       setResults((prev) => [...newResults, ...prev]);
       
-      // Update stats
+      // Update stats in database
       const avgConf = newResults.reduce((sum, r) => sum + r.confidence, 0) / newResults.length;
-      setStats((prev) => ({
-        textsProcessed: prev.textsProcessed + texts.length,
-        batchesCompleted: prev.batchesCompleted + (texts.length > 1 ? 1 : 0),
-        averageConfidence: (prev.averageConfidence * prev.textsProcessed + avgConf * texts.length) / 
-                          (prev.textsProcessed + texts.length),
-        badges: prev.badges,
-      }));
+      const newTextsProcessed = stats.textsProcessed + texts.length;
+      const newBatchesCompleted = stats.batchesCompleted + (texts.length > 1 ? 1 : 0);
+      const newAvgConfidence = (stats.averageConfidence * stats.textsProcessed + avgConf * texts.length) / newTextsProcessed;
+
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({
+          texts_processed: newTextsProcessed,
+          batches_completed: newBatchesCompleted,
+          average_confidence: newAvgConfidence,
+        })
+        .eq("id", user.id);
+
+      if (updateError) throw updateError;
+
+      setStats({
+        textsProcessed: newTextsProcessed,
+        batchesCompleted: newBatchesCompleted,
+        averageConfidence: newAvgConfidence,
+        badges: stats.badges,
+      });
 
       toast({
         title: "Analysis complete!",
@@ -111,12 +213,12 @@ const Index = () => {
 
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
     toast({
@@ -125,98 +227,112 @@ const Index = () => {
     });
   };
 
-  return (
-    <div className="min-h-screen bg-background">
-      {/* Hero Header */}
-      <div className="bg-gradient-hero text-primary-foreground py-12 px-4">
-        <div className="container mx-auto max-w-6xl">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <Sparkles className="w-8 h-8" />
-            <h1 className="text-4xl md:text-5xl font-bold">Sentiment Analyzer</h1>
-          </div>
-          <p className="text-center text-lg opacity-90 max-w-2xl mx-auto">
-            Explore emotional tones in text with AI-powered analysis. 
-            Gamified, beautiful, and insightful.
-          </p>
-        </div>
-      </div>
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate("/auth");
+  };
 
-      <div className="container mx-auto max-w-6xl px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+  if (!user) {
+    return null;
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-coral-light via-purple-light to-teal-light">
+      {/* Header */}
+      <header className="bg-white/80 backdrop-blur-sm border-b border-purple-200 shadow-sm sticky top-0 z-10">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Sparkles className="h-8 w-8 text-coral-dark" />
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-coral-dark to-purple-dark bg-clip-text text-transparent">
+                Sentiment Analyzer
+              </h1>
+            </div>
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" onClick={handleSignOut} className="gap-2">
+                <LogOut className="h-4 w-4" />
+                Sign Out
+              </Button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="container mx-auto px-4 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Input & Results */}
-          <div className="lg:col-span-3 space-y-6">
+          <div className="lg:col-span-2 space-y-6">
             <InputSection onAnalyze={analyzeSentiment} isAnalyzing={isAnalyzing} />
 
-            {isAnalyzing && batchProgress > 0 && (
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Processing batch...</span>
-                  <span>{Math.round(batchProgress)}%</span>
-                </div>
+            {isAnalyzing && (
+              <div className="bg-white/80 backdrop-blur-sm rounded-xl p-6 border border-purple-200 shadow-lg">
+                <h3 className="text-lg font-semibold mb-2 text-gray-800">
+                  Analyzing sentiment...
+                </h3>
                 <Progress value={batchProgress} className="h-2" />
+                <p className="text-sm text-gray-600 mt-2">
+                  {Math.round(batchProgress)}% complete
+                </p>
               </div>
             )}
 
+            {/* Current Result */}
+            {results.length > 0 && (
+              <div className="space-y-4">
+                <ResultCard result={results[0]} isCurrent={true} />
+              </div>
+            )}
+
+            {/* History */}
+            {results.length > 1 && (
+              <div className="space-y-4">
+                <h3 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+                  <span className="text-purple-600">History</span>
+                  <span className="text-sm font-normal text-gray-500">
+                    ({results.length - 1} previous)
+                  </span>
+                </h3>
+                <div className="space-y-3">
+                  {results.slice(1).map((result) => (
+                    <ResultCard key={result.id} result={result} isCurrent={false} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right Column - Stats & Visualizations */}
+          <div className="space-y-6">
+            <GamificationPanel stats={stats} />
             <VisualizationPanel results={results} />
 
             {results.length > 0 && (
-              <div className="space-y-8">
-                {/* Current/Latest Result */}
-                <div>
-                  <h2 className="text-3xl font-bold mb-4 flex items-center gap-2">
-                    <span className="text-primary">Current Analysis</span>
-                  </h2>
-                  <ResultCard result={results[0]} isCurrent={true} />
-                </div>
-
-                {/* History Section */}
-                {results.length > 1 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-xl font-semibold text-muted-foreground">
-                        History ({results.length - 1})
-                      </h3>
-                      <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={() => exportResults("csv")}>
-                          <Download className="w-4 h-4 mr-2" />
-                          CSV
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => exportResults("json")}>
-                          <Download className="w-4 h-4 mr-2" />
-                          JSON
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      {results.slice(1).map((result) => (
-                        <ResultCard key={result.id} result={result} isCurrent={false} />
-                      ))}
-                    </div>
-                  </div>
-                )}
+              <div className="bg-white/80 backdrop-blur-sm rounded-xl p-6 border border-purple-200 shadow-lg space-y-3">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                  Export Results
+                </h3>
+                <Button
+                  onClick={() => exportResults("csv")}
+                  variant="outline"
+                  className="w-full gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export as CSV
+                </Button>
+                <Button
+                  onClick={() => exportResults("json")}
+                  variant="outline"
+                  className="w-full gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export as JSON
+                </Button>
               </div>
             )}
           </div>
-
-          {/* Right Column - Gamification */}
-          <div className="lg:col-span-1">
-            <GamificationPanel stats={stats} />
-          </div>
         </div>
-
-        {/* Model Limitations Notice */}
-        <div className="mt-8 p-4 bg-muted rounded-lg border border-border">
-          <h3 className="font-semibold mb-2 flex items-center gap-2">
-            <Sparkles className="w-4 h-4" />
-            Model Limitations
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            Results are probabilistic and may be biased by training data. 
-            This tool should not be used as the sole basis for high-stakes decisions. 
-            Always verify critical sentiment analysis with human review.
-          </p>
-        </div>
-      </div>
+      </main>
     </div>
   );
 };

@@ -14,7 +14,69 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      profiles: {
+        Row: {
+          average_confidence: number
+          batches_completed: number
+          created_at: string
+          id: string
+          texts_processed: number
+          updated_at: string
+        }
+        Insert: {
+          average_confidence?: number
+          batches_completed?: number
+          created_at?: string
+          id: string
+          texts_processed?: number
+          updated_at?: string
+        }
+        Update: {
+          average_confidence?: number
+          batches_completed?: number
+          created_at?: string
+          id?: string
+          texts_processed?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sentiment_results: {
+        Row: {
+          confidence: number
+          created_at: string
+          explanation: string
+          id: string
+          keywords: Json
+          label: string
+          scores: Json
+          text: string
+          user_id: string
+        }
+        Insert: {
+          confidence: number
+          created_at?: string
+          explanation: string
+          id?: string
+          keywords: Json
+          label: string
+          scores: Json
+          text: string
+          user_id: string
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          explanation?: string
+          id?: string
+          keywords?: Json
+          label?: string
+          scores?: Json
+          text?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
